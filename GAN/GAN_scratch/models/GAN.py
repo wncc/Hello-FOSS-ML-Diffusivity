@@ -6,20 +6,41 @@ from torch.utils.data import DataLoader, Dataset
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
 from torchvision import datasets, transforms
+import torch.nn.utils.spectral_norm as spectral_norm
+import os
 
 # Self-Attention Module Placeholder
 class SelfAttention(nn.Module):
-    def _init_(self, in_dim):
-        super(SelfAttention, self)._init_()
+    def __init__(self, in_dim):
+        super(SelfAttention, self).__init__()
+        self.chanel_in = in_dim
 
-    def forward(self, x):
+        self.query = nn.Conv2d(in_channels = in_dim , out_channels = in_dim//8 , kernel_size= 1)
+        self.key = nn.Conv2d(in_channels = in_dim , out_channels = in_dim//8 , kernel_size= 1)
+        self.value = nn.Conv2d(in_channels = in_dim , out_channels = in_dim , kernel_size= 1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+        self.softmax  = nn.Softmax(dim=-1)
+
+    def forward(self,x):
+        m_batchsize,C,width ,height = x.size()
+        proj_query  = self.query(x).view(m_batchsize,-1,width*height).permute(0,2,1)
+        proj_key =  self.key(x).view(m_batchsize,-1,width*height)
+        energy =  torch.bmm(proj_query,proj_key)
+        attention = self.softmax(energy)
+        proj_value = self.value(x).view(m_batchsize,-1,width*height)
+
+        out = torch.bmm(proj_value,attention.permute(0,2,1) )
+        out = out.view(m_batchsize,C,width,height)
+
+        x += self.gamma*out
         return x
 
 class ResidualGenerator(nn.Module):
-    def _init_(self, latent_dim, img_channels, feature_g):
-        super(ResidualGenerator, self)._init_()
+    def __init__(self, latent_dim, img_channels, feature_g):
+        super(ResidualGenerator, self).__init__()
         self.init_size = 8
         self.l1 = nn.Sequential(nn.Linear(latent_dim, feature_g * 8 * self.init_size ** 2))
+
         
         self.conv_blocks = nn.Sequential(
             nn.BatchNorm2d(feature_g * 8),
@@ -27,10 +48,14 @@ class ResidualGenerator(nn.Module):
             nn.Conv2d(feature_g * 8, feature_g * 4, 3, stride=1, padding=1),
             nn.BatchNorm2d(feature_g * 4, 0.8),
             nn.ReLU(inplace=True),
+            SelfAttention(feature_g * 4),
+
             nn.Upsample(scale_factor=2),
             nn.Conv2d(feature_g * 4, feature_g * 2, 3, stride=1, padding=1),
             nn.BatchNorm2d(feature_g * 2, 0.8),
             nn.ReLU(inplace=True),
+            SelfAttention(feature_g * 2),
+
             nn.Conv2d(feature_g * 2, img_channels, 3, stride=1, padding=1),
             nn.Tanh()
         )
@@ -42,21 +67,22 @@ class ResidualGenerator(nn.Module):
         return img
 
 class ResidualDiscriminator(nn.Module):
-    def _init_(self, img_channels, feature_d):
-        super(ResidualDiscriminator, self)._init_()
+    def __init__(self, img_channels, feature_d):
+        super(ResidualDiscriminator, self).__init__()
+        
         def discriminator_block(in_filters, out_filters, bn=True):
-            layers = [nn.Conv2d(in_filters, out_filters, 3, 2, 1)]
+            layers = [spectral_norm(nn.Conv2d(in_filters, out_filters, 3, 2, 1))]
             if bn:
                 layers.append(nn.BatchNorm2d(out_filters))
             layers.append(nn.LeakyReLU(0.2, inplace=True))
             return layers
 
         self.model = nn.Sequential(
-            *discriminator_block(img_channels, feature_d, bn=False),
+            *discriminator_block(img_channels, feature_d, bn=False), 
             *discriminator_block(feature_d, feature_d * 2),
             *discriminator_block(feature_d * 2, feature_d * 4),
             *discriminator_block(feature_d * 4, feature_d * 8),
-            nn.Conv2d(feature_d * 8, 1, 1, stride=1, padding=0)
+            spectral_norm(nn.Conv2d(feature_d * 8, 1, 1, stride=1, padding=0))  
         )
         
     def forward(self, img):
@@ -119,11 +145,21 @@ class CIFAR10Dataset(Dataset):
         return image, label
 
 # Evaluate Function Placeholder
-def evaluate(generator, latent_dim, device):
+def evaluate(generator, latent_dim, device, output_dir="generated_images", n_images=16):
     generator.eval()
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
     with torch.no_grad():
-        z = torch.randn(16, latent_dim, device=device)
+        z = torch.randn(n_images, latent_dim, device=device)
+        
         gen_imgs = generator(z)
+
+        save_path = os.path.join(output_dir, "generated_grid.png")
+        vutils.save_image(gen_imgs, save_path, normalize=True, nrow=4)
+
+    print(f"Generated images saved to {save_path}")
     generator.train()
 
 # GAN Training Loop
