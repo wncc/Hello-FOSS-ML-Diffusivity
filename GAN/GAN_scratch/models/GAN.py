@@ -9,17 +9,36 @@ from torchvision import datasets, transforms
 
 # Self-Attention Module Placeholder
 class SelfAttention(nn.Module):
-    def _init_(self, in_dim):
-        super(SelfAttention, self)._init_()
+    def __init__(self, in_dim):
+        super(SelfAttention, self).__init__()
+        self.chanel_in = in_dim
 
-    def forward(self, x):
+        self.query = nn.Conv2d(in_channels = in_dim , out_channels = in_dim//8 , kernel_size= 1)
+        self.key = nn.Conv2d(in_channels = in_dim , out_channels = in_dim//8 , kernel_size= 1)
+        self.value = nn.Conv2d(in_channels = in_dim , out_channels = in_dim , kernel_size= 1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+        self.softmax  = nn.Softmax(dim=-1)
+
+    def forward(self,x):
+        m_batchsize,C,width ,height = x.size()
+        proj_query  = self.query(x).view(m_batchsize,-1,width*height).permute(0,2,1)
+        proj_key =  self.key(x).view(m_batchsize,-1,width*height)
+        energy =  torch.bmm(proj_query,proj_key)
+        attention = self.softmax(energy)
+        proj_value = self.value(x).view(m_batchsize,-1,width*height)
+
+        out = torch.bmm(proj_value,attention.permute(0,2,1) )
+        out = out.view(m_batchsize,C,width,height)
+
+        x += self.gamma*out
         return x
 
 class ResidualGenerator(nn.Module):
-    def _init_(self, latent_dim, img_channels, feature_g):
-        super(ResidualGenerator, self)._init_()
+    def __init__(self, latent_dim, img_channels, feature_g):
+        super(ResidualGenerator, self).__init__()
         self.init_size = 8
         self.l1 = nn.Sequential(nn.Linear(latent_dim, feature_g * 8 * self.init_size ** 2))
+
         
         self.conv_blocks = nn.Sequential(
             nn.BatchNorm2d(feature_g * 8),
@@ -27,10 +46,14 @@ class ResidualGenerator(nn.Module):
             nn.Conv2d(feature_g * 8, feature_g * 4, 3, stride=1, padding=1),
             nn.BatchNorm2d(feature_g * 4, 0.8),
             nn.ReLU(inplace=True),
+            SelfAttention(feature_g * 4),
+
             nn.Upsample(scale_factor=2),
             nn.Conv2d(feature_g * 4, feature_g * 2, 3, stride=1, padding=1),
             nn.BatchNorm2d(feature_g * 2, 0.8),
             nn.ReLU(inplace=True),
+            SelfAttention(feature_g * 2),
+
             nn.Conv2d(feature_g * 2, img_channels, 3, stride=1, padding=1),
             nn.Tanh()
         )
