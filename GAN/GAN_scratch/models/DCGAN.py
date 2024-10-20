@@ -4,6 +4,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
+import torchvision.datasets as dset
 
 class DCGenerator(nn.Module):
     def __init__(self, latent_dim, img_channels, feature_g):
@@ -44,6 +45,18 @@ batch_size = 128
 epochs = 50
 lr = 0.0002
 beta1 = 0.5
+image_size = 64
+workers = 2
+
+dataset = dset.ImageFolder(root="path",
+                           transform=transforms.Compose([
+                               transforms.Resize(image_size),
+                               transforms.CenterCrop(image_size),
+                               transforms.ToTensor(),
+                               transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                           ]))
+dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
+                                         shuffle=True, num_workers=workers)
 
 generator = DCGenerator(latent_dim, img_channels, feature_g).to(device)
 discriminator = DCDiscriminator(img_channels, feature_d).to(device)
