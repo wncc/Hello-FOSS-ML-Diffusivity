@@ -15,7 +15,13 @@ class DCGenerator(nn.Module):
             nn.ConvTranspose2d(feature_g * 8, feature_g * 4, 4, 2, 1, bias=False),
             nn.BatchNorm2d(feature_g * 4),
             nn.ReLU(True),
-            nn.ConvTranspose2d(feature_g * 4, img_channels, 4, 2, 1, bias=False),
+            nn.ConvTranspose2d(feature_g * 4, feature_g * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(feature_g * 2),
+            nn.ReLU(True),
+            nn.ConvTranspose2d(feature_g * 2, feature_g, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(feature_g),
+            nn.ReLU(True),
+            nn.ConvTranspose2d(feature_g, img_channels, 4, 2, 1, bias=False),
             nn.Tanh()
         )
 
@@ -28,7 +34,20 @@ class DCDiscriminator(nn.Module):
         self.model = nn.Sequential(
             nn.Conv2d(img_channels, feature_d, 4, 2, 1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(feature_d, feature_d * 4, 4, 2, 1, bias=False),
+
+            nn.Conv2d(feature_d, feature_d * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(feature_d * 2),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            nn.Conv2d(feature_d * 2, feature_d * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(feature_d * 4),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            nn.Conv2d(feature_d * 4, feature_d * 8, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(feature_d * 8),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            nn.Conv2d(feature_d * 8, 1, 4, 1, 0, bias=False),
             nn.Sigmoid()
         )
 
